@@ -175,6 +175,25 @@ func validateOptions(options *types.Options) error {
 		gologger.Info().Msgf("Depth automatically set to 3 to accommodate the `--known-files` option (originally set to %d).", options.MaxDepth)
 		options.MaxDepth = 3
 	}
+
+	// Endpoint diffing consumes the jsonl knowledgebase payload: enable the
+	// prerequisites automatically so the feature works with a single flag.
+	if options.DiffBaseline != "" {
+		if !fileutil.FileExists(options.DiffBaseline) {
+			return errkit.Newf("-diff baseline inventory does not exist: %s", options.DiffBaseline)
+		}
+		if !options.JSON {
+			gologger.Info().Msg("Endpoint diff enabled: switching to jsonl output (-j) automatically")
+			options.JSON = true
+		}
+		if !options.Endpoints {
+			gologger.Info().Msg("Endpoint diff enabled: turning on the endpoints extractor (-kb-endpoints) automatically")
+			options.Endpoints = true
+		}
+		if options.OutputFile == "" {
+			return errkit.New("-diff requires -o to write the current endpoint inventory")
+		}
+	}
 	gologger.DefaultLogger.SetFormatter(formatter.NewCLI(options.NoColors))
 	return nil
 }

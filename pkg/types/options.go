@@ -267,6 +267,22 @@ type Options struct {
 	RecordedFlow string
 	// MaxDomainPages is the maximum number of pages to crawl per domain (0 = unlimited)
 	MaxDomainPages int
+	// CrawlManifest writes a crawl-scope manifest (depth, exclusions, scope,
+	// ...) next to the output file so later endpoint diffs can distinguish
+	// real removals from endpoints this crawl simply did not cover.
+	CrawlManifest bool
+	// DiffBaseline is the previous week's jsonl inventory. When set, after
+	// crawling finishes the current inventory (-o) is compared against it and
+	// an endpoint diff report is produced. Requires -o and implies -j
+	// -kb-endpoints.
+	DiffBaseline string
+	// DiffReport is the path of the JSON diff report. Empty defaults to
+	// "<output file>.diff.json".
+	DiffReport string
+	// DiffAllowMissingManifest downgrades a missing baseline manifest from a
+	// hard error to a scope warning (baseline-only endpoints are then reported
+	// as not_covered instead of failing the run).
+	DiffAllowMissingManifest bool
 }
 
 func (options *Options) ParseCustomHeaders() map[string]string {

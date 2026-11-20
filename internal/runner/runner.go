@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/katana/pkg/engine"
@@ -32,6 +33,12 @@ type Runner struct {
 	options        *types.Options
 	state          *RunnerState
 	networkpolicy  *networkpolicy.NetworkPolicy
+
+	// closeOnce makes Close idempotent. The post-crawl diff needs the output
+	// writer flushed and closed before it reads the inventory file, while the
+	// deferred Close in main must remain a safe no-op afterwards.
+	closeOnce sync.Once
+	closeErr  error
 }
 
 type RunnerState struct {
@@ -158,12 +165,17 @@ case options.ChromeWSUrl != "":
 	return runner, nil
 }
 
-// Close closes the runner releasing resources
+// Close closes the runner releasing resources. It is idempotent: the first
+// call closes the crawler and its output writer (flushing buffered jsonl
+// output to disk); subsequent calls return the first call's error.
 func (r *Runner) Close() error {
-	return multierr.Combine(
-		r.crawler.Close(),
-		r.crawlerOptions.Close(),
-	)
+	r.closeOnce.Do(func() {
+		r.closeErr = multierr.Combine(
+			r.crawler.Close(),
+			r.crawlerOptions.Close(),
+		)
+	})
+	return r.closeErr
 }
 
 func (r *Runner) SaveState(resumeFilename string) error {

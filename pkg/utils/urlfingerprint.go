@@ -46,6 +46,19 @@ var segmentPatterns = []segmentPattern{
 // normalizeSegment checks a single path segment against heuristic patterns.
 // Returns the placeholder if matched, or the original segment if no pattern matches.
 func normalizeSegment(segment string) (string, bool) {
+	return NormalizePathSegment(segment)
+}
+
+// NormalizePathSegment checks a single path segment against the built-in
+// heuristic patterns (UUID, hashes, object ids, dates, timestamps, numeric
+// ids). It returns the placeholder ("{uuid}", "{num}", ...) and true when the
+// segment matches a dynamic pattern, otherwise the original segment and false.
+//
+// Exported for consumers that need the same dynamic-segment normalization
+// without building a full URL fingerprint (e.g. week-over-week endpoint
+// diffing). It is a pure function: identical input always yields identical
+// output, independent of crawl order or observed segment cardinality.
+func NormalizePathSegment(segment string) (string, bool) {
 	for _, p := range segmentPatterns {
 		if p.regex.MatchString(segment) {
 			if p.validate != nil && !p.validate(segment) {

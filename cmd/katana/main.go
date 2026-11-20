@@ -102,6 +102,26 @@ func main() {
 			gologger.Warning().Msgf("Failed to remove resume file: %v", err)
 		}
 	}
+
+	// Post-crawl scope snapshot and week-over-week endpoint diff. Both run
+	// after the crawler and its output writer have been closed, so every
+	// jsonl line is already flushed and on disk. Runner.Close is idempotent;
+	// the deferred Close above remains a no-op safety net.
+	if options.CrawlManifest || options.DiffBaseline != "" {
+		if err := katanaRunner.Close(); err != nil {
+			gologger.Warning().Msgf("Error closing katana runner: %v", err)
+		}
+	}
+	if options.CrawlManifest {
+		if err := katanaRunner.WriteCrawlManifest(); err != nil {
+			gologger.Fatal().Msgf("%s", err)
+		}
+	}
+	if options.DiffBaseline != "" {
+		if err := katanaRunner.RunEndpointDiff(); err != nil {
+			gologger.Fatal().Msgf("endpoint diff failed: %s", err)
+		}
+	}
 }
 
 const defaultBodyReadSize = 4 * 1024 * 1024
@@ -273,6 +293,14 @@ func readFlags() (*goflags.FlagSet, error) {
 		flagSet.BoolVarP(&options.Verbose, "verbose", "v", false, "display verbose output"),
 		flagSet.BoolVar(&options.Debug, "debug", false, "display debug output"),
 		flagSet.BoolVar(&options.Version, "version", false, "display project version"),
+	)
+
+	// Diff group
+	flagSet.CreateGroup("diff", "Endpoint Diff",
+		flagSet.BoolVar(&options.CrawlManifest, "crawl-manifest", false, "write a crawl-scope manifest next to the output file for later endpoint diffing"),
+		flagSet.StringVar(&options.DiffBaseline, "diff", "", "diff the current endpoint inventory (-o, jsonl) against a previous inventory and write a change report"),
+		flagSet.StringVar(&options.DiffReport, "diff-output", "", "path for the endpoint diff report (default: <output>.diff.json)"),
+		flagSet.BoolVar(&options.DiffAllowMissingManifest, "diff-allow-missing-manifest", false, "warn instead of failing when the baseline crawl manifest is missing"),
 	)
 
 	if err := flagSet.Parse(); err != nil {

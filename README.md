@@ -244,6 +244,12 @@ OUTPUT:
    -v, -verbose                      display verbose output
    -debug                            display debug output
    -version                          display project version
+
+ENDPOINT DIFF:
+   -crawl-manifest                   write a crawl-scope manifest next to the output file for later endpoint diffing
+   -diff string                      diff the current endpoint inventory (-o, jsonl) against a previous inventory and write a change report
+   -diff-output string               path for the endpoint diff report (default: <output>.diff.json)
+   -diff-allow-missing-manifest      warn instead of failing when the baseline crawl manifest is missing
 ```
 
 ## Running Katana
@@ -749,6 +755,49 @@ Enable the endpoints extractor, which classifies requests as REST, GraphQL, SOAP
 
 ```console
 katana -u https://example.com -kb-endpoints
+```
+
+## Endpoint Diff (week-over-week change report)
+
+For recurring endpoint inventories, katana can produce a deterministic diff
+between the current crawl and a previous inventory instead of leaving the
+week-over-week comparison to manual diffing. The feature is fully opt-in:
+without the flags below, output format, exit codes and logs are unchanged.
+
+| Flag | Purpose |
+| --- | --- |
+| `-crawl-manifest` | Write a crawl-scope manifest (`<output>.manifest.json`) recording depth, scope, exclusions and other coverage-defining options next to the jsonl inventory. |
+| `-diff <previous.jsonl>` | After crawling, diff the current inventory (`-o`) against a previous one and write a change report (`<output>.diff.json`). Implies `-j -kb-endpoints` and requires `-o`. |
+| `-diff-output <path>` | Override the diff report path. |
+| `-diff-allow-missing-manifest` | Warn instead of failing when the baseline inventory has no manifest; baseline-only endpoints are then reported as `not_covered`. |
+
+The report partitions every endpoint into three buckets that together equal
+the current full inventory: `added`, `removed` and `persisted`.
+
+- Endpoint identity normalizes dynamic path segments (numeric ids, UUIDs,
+  hashes, dates) to placeholders, so `/users/1` and `/users/2` are the same
+  endpoint instead of a daily add/remove pair.
+- A persisted endpoint whose query parameter set changed carries a
+  `param_change`; one whose source page moved carries a `source_change` —
+  neither is counted as an add plus a remove.
+- Endpoints absent from the current run are `removed` only when both crawls
+  used the same scope; otherwise they are `not_covered`, with a
+  `scope_notice` naming the differing manifest fields.
+- A batch of routes sharing one transformation (e.g. `/v1/*` → `/v2/*`) is
+  reported as a `structural_change` with `rewired` pairs rather than dozens of
+  independent add/remove rows.
+- Reports contain no maps or timestamps and every bucket is identity-sorted,
+  so comparing the same two inventories twice yields byte-identical output.
+  The report is written atomically (temp file + rename), so a failed
+  comparison never leaves a truncated report.
+
+```console
+# week 1: persist the inventory and its scope manifest
+katana -u https://example.com -j -kb-endpoints -o week1.jsonl -crawl-manifest
+
+# week 2: crawl, then diff against week 1
+katana -u https://example.com -j -kb-endpoints -o week2.jsonl -crawl-manifest \
+  -diff week1.jsonl
 ```
 
 ## Authenticated Crawling

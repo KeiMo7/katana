@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "baseline_file": "testdata/week1.jsonl",
+  "current_file": "testdata/week2.jsonl",
+  "summary": {
+    "baseline_total": 4,
+    "current_total": 3,
+    "added": 1,
+    "removed": 2,
+    "not_covered": 0,
+    "persisted": 2,
+    "param_changed": 1,
+    "source_changed": 0,
+    "rewired": 0
+  },
+  "structural_change": {
+    "detected": false,
+    "rewired_count": 0,
+    "baseline_total": 4,
+    "threshold": 0.25,
+    "message": "",
+    "rewired": null
+  },
+  "added": [
+    {
+      "identity": "GET http://example.local/api/v1/fresh-metrics",
+      "method": "GET",
+      "class": "rest",
+      "url": "http://example.local/api/v1/fresh-metrics",
+      "templated_path": "/api/v1/fresh-metrics",
+      "sources": [
+        "http://example.local/home"
+      ]
+    }
+  ],
+  "removed": [
+    {
+      "identity": "GET http://example.local/api/v1/legacy-reports",
+      "method": "GET",
+      "class": "rest",
+      "url": "http://example.local/api/v1/legacy-reports",
+      "templated_path": "/api/v1/legacy-reports",
+      "sources": [
+        "http://example.local/home"
+      ],
+      "state": "removed"
+    },
+    {
+      "identity": "GET http://example.local/api/v1/orders",
+      "method": "GET",
+      "class": "rest",
+      "url": "http://example.local/api/v1/orders?limit=10",
+      "templated_path": "/api/v1/orders",
+      "params": [
+        "limit"
+      ],
+      "sources": [
+        "http://example.local/home"
+      ],
+      "state": "removed"
+    }
+  ],
+  "persisted": [
+    {
+      "identity": "GET http://example.local/api/v1/profile/me",
+      "method": "GET",
+      "class": "rest",
+      "url": "http://example.local/api/v1/profile/me",
+      "templated_path": "/api/v1/profile/me",
+      "sources": [
+        "http://example.local/page-about.html"
+      ]
+    },
+    {
+      "identity": "GET http://example.local/api/v1/users/{num}",
+      "method": "GET",
+      "class": "rest",
+      "url": "http://example.local/api/v1/users/2001",
+      "templated_path": "/api/v1/users/{num}",
+      "params": [
+        "page",
+        "sort"
+      ],
+      "sources": [
+        "http://example.local/home"
+      ],
+      "param_change": {
+        "added": [
+          "page",
+          "sort"
+        ]
+      }
+    }
+  ]
+}
