@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/happyhackingspace/dit"
 	"github.com/projectdiscovery/fastdialer/fastdialer"
 	"github.com/projectdiscovery/gologger"
 	"github.com/projectdiscovery/katana/pkg/decider"
@@ -18,11 +19,11 @@ import (
 	"github.com/projectdiscovery/katana/pkg/knowledgebase/extractors/secrets"
 	"github.com/projectdiscovery/katana/pkg/output"
 	"github.com/projectdiscovery/katana/pkg/similarity"
+	"github.com/projectdiscovery/katana/pkg/state"
 	"github.com/projectdiscovery/katana/pkg/utils/extensions"
 	"github.com/projectdiscovery/katana/pkg/utils/filters"
 	"github.com/projectdiscovery/katana/pkg/utils/scope"
 	"github.com/projectdiscovery/ratelimit"
-	"github.com/happyhackingspace/dit"
 	"github.com/projectdiscovery/utils/errkit"
 	urlutil "github.com/projectdiscovery/utils/url"
 	wappalyzer "github.com/projectdiscovery/wappalyzergo"
@@ -59,6 +60,9 @@ type CrawlerOptions struct {
 	Extractors []knowledgebase.Extractor
 	// Decider answers typed crawl questions when -ai-url or -ai-replay is set
 	Decider *decider.Cache
+	// StateTracker records per-URL crawl progress for resumable crawling
+	// when -crawl-state-dir is set; nil in a plain single-run crawl
+	StateTracker *state.Tracker
 
 	// Optional structured logger for headless crawler
 	Logger *slog.Logger
@@ -266,6 +270,11 @@ func (c *CrawlerOptions) Close() error {
 	c.UniqueFilter.Close()
 	if c.ContentSimilarity != nil {
 		c.ContentSimilarity.Close()
+	}
+	if c.StateTracker != nil {
+		if err := c.StateTracker.Close(); err != nil {
+			gologger.Warning().Msgf("could not flush crawl state: %s", err)
+		}
 	}
 	return c.OutputWriter.Close()
 }

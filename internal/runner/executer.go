@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/projectdiscovery/gologger"
+	"github.com/projectdiscovery/katana/pkg/state"
 	"github.com/projectdiscovery/utils/errkit"
 	urlutil "github.com/projectdiscovery/utils/url"
 	"github.com/remeh/sizedwaitgroup"
@@ -24,6 +25,26 @@ func (r *Runner) ExecuteCrawling() error {
 
 	for _, input := range inputs {
 		_ = r.state.InFlightUrls.Set(addSchemeIfNotExists(input), struct{}{})
+	}
+
+	// Enable resumable crawling when a state directory is configured. Any
+	// problem with the state (unwritable directory, corrupted file, seed
+	// list mismatch) aborts the run before a single request is sent.
+	if r.options.CrawlStateDir != "" {
+		seeds := make([]string, 0, len(inputs))
+		for _, input := range inputs {
+			seeds = append(seeds, addSchemeIfNotExists(input))
+		}
+		tracker, err := state.Open(r.options.CrawlStateDir, seeds)
+		if err != nil {
+			return err
+		}
+		r.crawlerOptions.StateTracker = tracker
+		if tracker.Resumed() {
+			progress := tracker.Progress()
+			gologger.Info().Msgf("Resuming crawl from %s: %d done, %d pending, %d failed (will be retried)",
+				r.options.CrawlStateDir, progress.Done, progress.Pending, progress.Failed)
+		}
 	}
 
 	// Track crawl timing
@@ -60,6 +81,13 @@ func (r *Runner) ExecuteCrawling() error {
 		}(input)
 	}
 	wg.Wait()
+
+	// Report how much of the crawl was reused from the checkpoint versus
+	// fetched during this run
+	if tracker := r.crawlerOptions.StateTracker; tracker != nil {
+		reused, fetched, failed := tracker.Stats()
+		gologger.Info().Msgf("Crawl state: %d URLs reused from checkpoint, %d fetched this run, %d failed (recorded for retry)", reused, fetched, failed)
+	}
 
 	// Show completion message with stats
 	r.showCompletionStats(startTime)

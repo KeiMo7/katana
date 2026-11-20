@@ -149,6 +149,14 @@ func (s *Shared) Enqueue(queue *queue.Queue, navigationRequests ...*navigation.R
 			}
 		}
 
+		// With resumable crawling enabled, skip URLs already completed in a
+		// previous run or already waiting in the restored pending queue.
+		// Identity is compared after normalization so different spellings of
+		// the same page (fragment, host case, extra slashes) collapse to one.
+		if st := s.Options.StateTracker; st != nil && st.IsKnown(reqUrl) {
+			continue
+		}
+
 		// Ignore blank URL items and only work on unique items
 		if !s.Options.UniqueFilter.UniqueURL(reqUrl) && len(nr.CustomFields) == 0 {
 			continue
@@ -170,6 +178,9 @@ func (s *Shared) Enqueue(queue *queue.Queue, navigationRequests ...*navigation.R
 		}
 
 		queue.Push(nr, s.priority(nr))
+		if st := s.Options.StateTracker; st != nil {
+			st.MarkPending(nr)
+		}
 
 		if s.Options.Options.PathClimb {
 			extractedParentURLs := utils.ExtractParentPaths(nr.URL)
@@ -181,6 +192,9 @@ func (s *Shared) Enqueue(queue *queue.Queue, navigationRequests ...*navigation.R
 				checkURL := extractedParentURL
 				if s.Options.Options.FilterSimilar {
 					checkURL = utils.FingerprintURL(checkURL, s.PathTrie)
+				}
+				if st := s.Options.StateTracker; st != nil && st.IsKnown(checkURL) {
+					continue
 				}
 				if !s.Options.UniqueFilter.UniqueURL(checkURL) {
 					continue
@@ -203,6 +217,9 @@ func (s *Shared) Enqueue(queue *queue.Queue, navigationRequests ...*navigation.R
 					Tag:          "path-climb",
 				}
 				queue.Push(parentReq, s.priority(parentReq))
+				if st := s.Options.StateTracker; st != nil {
+					st.MarkPending(parentReq)
+				}
 			}
 		}
 	}
@@ -430,7 +447,17 @@ func (s *Shared) NewCrawlSessionWithURL(URL string) (*CrawlSession, error) {
 		cancel()
 		return nil, err
 	}
-	queue.Push(&navigation.Request{Method: http.MethodGet, URL: URL, Depth: 0, SkipValidation: true}, 0)
+	if st := s.Options.StateTracker; st != nil {
+		// Resumable crawl: the seed and every URL restored from the state
+		// directory enter the queue through the tracker, so a URL completed
+		// in a previous run is never fetched again.
+		st.MarkPending(&navigation.Request{Method: http.MethodGet, URL: URL, Depth: 0, RootHostname: hostname})
+		for _, restored := range st.RestorePending(hostname) {
+			queue.Push(restored, s.priority(restored))
+		}
+	} else {
+		queue.Push(&navigation.Request{Method: http.MethodGet, URL: URL, Depth: 0, SkipValidation: true}, 0)
+	}
 
 	if s.KnownFiles != nil {
 		navigationRequests, err := s.KnownFiles.RequestWithContext(ctx, URL)
@@ -542,6 +569,13 @@ func (s *Shared) Do(crawlSession *CrawlSession, doRequest DoRequestFunc) error {
 
 		req, inScope, ok := s.AcceptRequest(crawlSession, item)
 		if !ok {
+			if st := s.Options.StateTracker; st != nil {
+				if nr, isReq := item.(*navigation.Request); isReq {
+					// settled without a fetch (invalid, filtered or out of
+					// scope); don't resurrect it on the next resume
+					st.MarkSkipped(nr)
+				}
+			}
 			crawlSession.Queue.Done()
 			continue
 		}
@@ -598,7 +632,22 @@ func (s *Shared) Do(crawlSession *CrawlSession, doRequest DoRequestFunc) error {
 				}
 			}
 
+			st := s.Options.StateTracker
+			if st != nil {
+				st.MarkInFlight(req)
+			}
 			resp, err := doRequest(crawlSession, req)
+			if st != nil && err != nil {
+				if crawlSession.Ctx.Err() != nil {
+					// interrupted mid-flight by shutdown, not a real
+					// failure: leave it pending for the next run
+					st.MarkAborted(req)
+				} else {
+					// recorded with its failure kind and retried on the
+					// next resume
+					st.MarkFailed(req, err)
+				}
+			}
 
 			respHost := ResponseHost(resp, reqHost)
 			if resp != nil && IsThrottled(resp.StatusCode) {
@@ -612,6 +661,9 @@ func (s *Shared) Do(crawlSession *CrawlSession, doRequest DoRequestFunc) error {
 			}
 
 			if resp != nil && s.StopForBlock(resp.Resp, req.URL) {
+				if st != nil {
+					st.MarkDone(req)
+				}
 				return
 			}
 			if err != nil {
@@ -626,14 +678,27 @@ func (s *Shared) Do(crawlSession *CrawlSession, doRequest DoRequestFunc) error {
 				return
 			}
 			if resp == nil || resp.Resp == nil || resp.Reader == nil {
+				if st != nil {
+					st.MarkDone(req)
+				}
 				return
 			}
 			if s.Options.Options.DisableRedirects && resp.IsRedirect() {
+				if st != nil {
+					st.MarkDone(req)
+				}
 				return
 			}
 
 			navigationRequests := s.Options.Parser.ParseResponse(resp)
 			s.Enqueue(crawlSession.Queue, navigationRequests...)
+			if st != nil {
+				// Mark done only after the discovered URLs are journaled as
+				// pending: a kill between fetch and enqueue must leave the
+				// parent pending so it is re-fetched (and its links
+				// re-discovered) on the next run.
+				st.MarkDone(req)
+			}
 		}()
 	}
 	wg.Wait()

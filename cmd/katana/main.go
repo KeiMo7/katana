@@ -114,6 +114,7 @@ func readFlags() (*goflags.FlagSet, error) {
 	flagSet.CreateGroup("input", "Input",
 		flagSet.StringSliceVarP(&options.URLs, "list", "u", nil, "target url / list to crawl", goflags.FileCommaSeparatedStringSliceOptions),
 		flagSet.StringVar(&options.Resume, "resume", "", "resume scan using resume.cfg"),
+		flagSet.StringVar(&options.CrawlStateDir, "crawl-state-dir", "", "enable resumable crawling: per-URL progress is stored in this directory and reused on restart"),
 		flagSet.StringSliceVarP(&options.Exclude, "exclude", "e", nil, "exclude host matching specified filter ('cdn', 'private-ips', cidr, ip, regex)", goflags.CommaSeparatedStringSliceOptions),
 	)
 

@@ -27,6 +27,9 @@ type Options struct {
 	URLs goflags.StringSlice
 	// Resume the scan from the state stored in the resume config file
 	Resume string
+	// CrawlStateDir enables resumable crawling: per-URL progress is stored
+	// in this directory and reused when the crawl is restarted
+	CrawlStateDir string
 	// Exclude host matching specified filter ('cdn', 'private-ips', cidr, ip, regex)
 	Exclude goflags.StringSlice
 	// Scope contains a list of regexes for in-scope URLS
